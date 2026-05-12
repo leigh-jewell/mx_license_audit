@@ -215,24 +215,6 @@ def _fetch_all_pages(
     return records
 
 
-def _fetch_inventory_devices(
-    client: httpx.Client,
-    inventory_devices_url: str,
-    headers: dict[str, str],
-) -> list[dict[str, Any]]:
-    """Fetch all inventory device pages for an organization.
-
-    Args:
-        client: Configured HTTP client.
-        inventory_devices_url: Inventory devices endpoint URL.
-        headers: Request headers.
-
-    Returns:
-        list[dict[str, Any]]: Combined inventory device records across pages.
-    """
-    return _fetch_all_pages(client, inventory_devices_url, headers)
-
-
 def _build_vpn_uplink_selection_lookup(
     client: httpx.Client,
     headers: dict[str, str],
@@ -467,7 +449,7 @@ def _fetch_all_data(
 
     print("Fetching inventory devices...")
     logger.info("Fetching inventory devices")
-    inventory_devices = _fetch_inventory_devices(client, f"{base_url}/inventory/devices", headers)
+    inventory_devices = _fetch_all_pages(client, f"{base_url}/inventory/devices", headers, per_page=1000)
     appliance_count = len(_inventory_rows(inventory_devices))
     print(f"✓ Found {appliance_count} appliance devices")
     logger.info("Found %d appliance devices", appliance_count)
@@ -478,7 +460,7 @@ def _fetch_all_data(
     print(f"✓ {len(networks)} networks retrieved")
 
     print("Fetching VPN statuses...")
-    vpn_statuses = _fetch_all_pages(client, f"{base_url}/appliance/vpn/statuses", headers)
+    vpn_statuses = _fetch_all_pages(client, f"{base_url}/appliance/vpn/statuses", headers, per_page=300)
     logger.debug("Retrieved %d VPN status entries", len(vpn_statuses))
     print(f"✓ {len(vpn_statuses)} VPN status entries retrieved")
 
@@ -488,13 +470,13 @@ def _fetch_all_data(
     print(f"✓ {len(internet_policies)} internet policy entries retrieved")
 
     print("Fetching appliance uplink statuses...")
-    appliance_uplink_statuses = _fetch_all_pages(client, f"{base_url}/appliance/uplink/statuses", headers)
+    appliance_uplink_statuses = _fetch_all_pages(client, f"{base_url}/appliance/uplink/statuses", headers, per_page=1000)
     logger.debug("Retrieved %d appliance uplink status entries", len(appliance_uplink_statuses))
     print(f"✓ {len(appliance_uplink_statuses)} appliance uplink status entries retrieved")
 
     print("Fetching VPN exclusions...")
     vpn_exclusions_by_network = _fetch_all_pages(
-        client, f"{base_url}/appliance/trafficShaping/vpnExclusions/byNetwork", headers
+        client, f"{base_url}/appliance/trafficShaping/vpnExclusions/byNetwork", headers, per_page=1000
     )
     logger.debug("Retrieved %d VPN exclusion entries", len(vpn_exclusions_by_network))
     print(f"✓ {len(vpn_exclusions_by_network)} VPN exclusion entries retrieved")
