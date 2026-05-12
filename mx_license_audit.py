@@ -517,20 +517,54 @@ def _fetch_all_data(
     }
 
 
-def _configure_logging(output_file: str) -> None:
+def _configure_logging(output_file: str, api_key: str) -> None:
     """Configure logging to a file alongside the output CSV.
+
+    A log filter is attached to scrub the API key from all records so it
+    is never written to disk.
 
     Args:
         output_file: Path to the output CSV file used to derive the log file path.
+        api_key: Meraki API key to redact from log output.
     """
+
+    class _SensitiveDataFilter(logging.Filter):
+        """Redact the API key from log messages and exception tracebacks."""
+
+        def __init__(self, secret: str) -> None:
+            super().__init__()
+            self._secret = secret
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            record.msg = str(record.msg).replace(self._secret, "***REDACTED***")
+            if record.exc_text:
+                record.exc_text = record.exc_text.replace(self._secret, "***REDACTED***")
+            if record.exc_info and record.exc_info[1]:
+                exc_str = str(record.exc_info[1])
+                if self._secret in exc_str:
+                    # Force exc_text to be rendered now so we can scrub it
+                    record.exc_text = record.exc_text or ""
+            args = record.args
+            if isinstance(args, tuple):
+                record.args = tuple(
+                    str(a).replace(self._secret, "***REDACTED***") if isinstance(a, str) else a
+                    for a in args
+                )
+            elif isinstance(args, dict):
+                record.args = {
+                    k: str(v).replace(self._secret, "***REDACTED***") if isinstance(v, str) else v
+                    for k, v in args.items()
+                }
+            return True
+
     base = os.path.splitext(output_file)[0]
     log_file = base + ".log"
+    handler = logging.FileHandler(log_file)
+    handler.addFilter(_SensitiveDataFilter(api_key))
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-        ],
+        handlers=[handler],
     )
     logger = logging.getLogger(__name__)
     logger.info("Logging configured. Details written to %s", log_file)
@@ -585,17 +619,16 @@ def _validate_api_key_and_org(client: httpx.Client, headers: dict[str, str], org
 def main() -> None:
     """Run prototype requests and write appliance audit CSV file."""
     args = parse_args()
-    _configure_logging(args.file)
-    logger = logging.getLogger(__name__)
-    logger.info("Starting appliance audit for org %s", args.org_id)
 
     try:
         api_key = os.getenv("MERAKI_DASHBOARD_API_KEY", "").strip()
         if not api_key:
-            raise EnvironmentError(
-                "MERAKI_DASHBOARD_API_KEY is not set. "
-                "Fix: export MERAKI_DASHBOARD_API_KEY before running this script."
-            )
+            print("[ERROR] MERAKI_DASHBOARD_API_KEY is not set. Fix: export MERAKI_DASHBOARD_API_KEY before running this script.")
+            raise SystemExit(1)
+
+        _configure_logging(args.file, api_key)
+        logger = logging.getLogger(__name__)
+        logger.info("Starting appliance audit for org %s", args.org_id)
         logger.debug("API key loaded from environment")
 
         headers = {
@@ -655,7 +688,7 @@ def main() -> None:
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
-    except (EnvironmentError, ValueError) as exc:
+    except (ValueError) as exc:
         error_msg = str(exc)
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)

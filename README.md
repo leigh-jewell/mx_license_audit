@@ -6,7 +6,11 @@ Queries the Meraki Dashboard API to audit MX appliance licensing levels across a
 
 - Python 3.10+
 - [`httpx`](https://www.python-httpx.org/) package
-- A Meraki Dashboard API key with read access to the target organization
+- A Meraki Dashboard API key with **read-only** access to the target organization
+
+> **Security:** Always use a read-only API key scoped to the minimum required permissions. Never use a full-access or write-enabled key with this script.
+
+> **Testing:** Before running against a production organization, validate the script against a lab or non-production environment to confirm expected behaviour.
 
 ## Installation
 
