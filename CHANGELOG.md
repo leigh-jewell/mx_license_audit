@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-13
+
+### Security
+- Added log-injection hardening via `_sanitize_log_text` to neutralize CR/LF characters in untrusted values before logging
+- Restricted log file permissions to owner-only (`0600`) on supported platforms
+- Explicit TLS verification configured on `httpx.Client` (`verify=True`)
+- Replaced flat client timeout with explicit phase-specific timeouts (`connect`, `read`, `write`, `pool`)
+
+### Added
+- Adaptive Policy support via `GET /organizations/{orgId}/adaptivePolicy/settings`
+- New CSV column: `AdaptiveEnabled`
+- `get_api_key.py` helper that reads the API key from OS keyring service `MERAKI_DASHBOARD_API_KEY` and emits shell-safe export commands for current-session use
+- `requirements.lock` generated with pinned dependency versions (`uv pip compile requirements.txt -o requirements.lock`)
+
+### Changed
+- `FeatureLevel` classification now includes Adaptive Policy:
+	- `Essential` requires `InternetPolicies`, `VPNUplinkSelection`, `VPNExclusion`, and `AdaptiveEnabled` all `False`
+	- `Advantage` is assigned when any of those four flags is `True`
+- Simplified data fetching by removing the `_fetch_inventory_devices` wrapper and using `_fetch_all_pages` directly
+- Updated README to a `uv`-only workflow for environment, dependency sync, key loading, and script execution
+- Updated `.gitignore` to include `.venv/` and common Python cache artifacts
+
 ## [1.1.0] - 2026-05-12
 
 ### Security
