@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-05-13
+
+### Changed
+- Updated README audited feature table to include "Number of Enabled WAN Links" for `NumberWANLinkEnabled`
+
 ## [1.3.0] - 2026-05-13
 
 ### Added
