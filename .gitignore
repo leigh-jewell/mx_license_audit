@@ -1,3 +1,10 @@
 # Output files
 *.csv
 *.log
+
+# Python virtual environment
+.venv/
+
+# Python cache/artifacts
+__pycache__/
+*.pyc

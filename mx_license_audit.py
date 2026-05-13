@@ -1,16 +1,26 @@
-"""Prototype script to report appliance VPN and internet policy status by org.
+"""Meraki MX Appliance Configuration Audit
 
-This script queries the Meraki Dashboard API to audit MX appliance licensing levels
-across an organization. It generates a CSV report with licensing feature indicators
-for each appliance.
+This script uses the Meraki Dashboard API to audit MX appliance configuration to see if they are 
+using Advantage license features for a specified organisation. It generates a CSV report with licensing feature indicators
+for each appliance. If you have moved to subscription licensing and now have the ability to select
+license levels on a per network basis this script can help to understand what networks could have their
+license levels lowered based on current feature usage.
 
-Previously printed information (for reference):
-- Audit Preamble: Licensing guidance explaining features that differentiate Advantage
-  from Essential licensing: Adaptive Policy (AdP), SD-Internet Steering/SD-WAN Policies
-  (InternetPolicies & VPNUplinkSelection), and Smart Breakout (VPNExclusion).
-  Explained that Essential requires all four features to be False.
-  Also noted VPN status checks AutoVPN usage and NumberWANLink indicates operational
-  WAN links for SD-WAN performance benefits.
+Reference:
+For a list of features included in each license level, see the Meraki documentation:
+https://documentation.meraki.com/Platform_Management/Product_Information/Licensing/Subscription_-_MX_Licensing#Features_Highlights
+
+
+The following is audited in the MX configuration:
+| Feature | API Reference | Description | License Level |
+| -------- | -------- | -------- | -------- |
+| SD-Internet Steering | InternetPolicies | Controls internet traffic routing based on policies. | Advantage |
+| SD-WAN Policies | VPNUplinkSelection | Manages VPN uplink selection for SD-WAN. | Advantage |
+| Smart Breakout | VPNExclusion | Allows certain traffic to bypass the VPN. | Advantage |
+| VPN Status | VPN Statuses | Indicates if VPN is enabled on the appliance. | Not a license feature but provides context for SD-WAN usage |
+| Number of WAN Links | Appliance Uplink Statuses | Shows the number of operational WAN links, which can impact SD-WAN performance benefits. | Not a license feature but provides context for SD-WAN usage |
+
+
 
 - Summary Statistics: After CSV output, displayed:
   - Total MX devices audited
@@ -40,6 +50,14 @@ import httpx
 
 
 PER_PAGE = 200
+
+
+def _sanitize_log_text(value: Any) -> str:
+    """Sanitize untrusted values before writing to logs.
+
+    Replaces CR/LF characters so attackers cannot forge extra log lines.
+    """
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,6 +233,23 @@ def _fetch_all_pages(
     return records
 
 
+def _adaptive_enabled_networks(adaptive_policy_settings: Any) -> set[str]:
+    """Return network IDs with Adaptive Policy enabled.
+
+    Args:
+        adaptive_policy_settings: Response payload from adaptive policy settings endpoint.
+
+    Returns:
+        set[str]: Network IDs with adaptive policy enabled.
+    """
+    if not isinstance(adaptive_policy_settings, dict):
+        return set()
+    enabled = adaptive_policy_settings.get("enabledNetworks")
+    if not isinstance(enabled, list):
+        return set()
+    return {str(network_id).strip() for network_id in enabled if str(network_id).strip()}
+
+
 def _build_vpn_uplink_selection_lookup(
     client: httpx.Client,
     headers: dict[str, str],
@@ -244,7 +279,7 @@ def _build_vpn_uplink_selection_lookup(
                 retry_after = int(response.headers.get("Retry-After", 1))
                 logger.warning(
                     "Rate limited on network %s, retrying after %ds (attempt %d/3)",
-                    network_id, retry_after, attempt + 1,
+                    _sanitize_log_text(network_id), retry_after, attempt + 1,
                 )
                 time.sleep(retry_after)
                 continue
@@ -334,6 +369,7 @@ def _write_csv(
     policy_lookup: dict[str, bool],
     network_name_lookup: dict[str, str],
     vpn_uplink_selection_lookup: dict[str, bool],
+    adaptive_enabled_networks: set[str],
     wan_link_count_lookup: dict[str, int],
     vpn_exclusion_lookup: dict[str, bool],
     output_file: str,
@@ -347,6 +383,7 @@ def _write_csv(
         policy_lookup: Network-to-policy-presence mapping.
         network_name_lookup: Network ID to network name mapping.
         vpn_uplink_selection_lookup: Network ID to VPN uplink selection presence mapping.
+        adaptive_enabled_networks: Network IDs with adaptive policy enabled.
         wan_link_count_lookup: Network ID to WAN link count mapping.
         vpn_exclusion_lookup: Network ID to VPN exclusion presence mapping.
         output_file: Path to output CSV file.
@@ -372,6 +409,7 @@ def _write_csv(
                 "InternetPolicies",
                 "VPNUplinkSelection",
                 "VPNExclusion",
+                "AdaptiveEnabled",
                 "FeatureLevel",
             ]
         )
@@ -390,18 +428,21 @@ def _write_csv(
             vpn_enabled = device_serial in vpn_serials
             internet_policies_configured = policy_lookup.get(network_id, False)
             vpn_uplink_selection_configured = vpn_uplink_selection_lookup.get(network_id, False)
+            adaptive_enabled = network_id in adaptive_enabled_networks
             number_wan_link = wan_link_count_lookup.get(network_id, 0)
             vpn_exclusion_configured = vpn_exclusion_lookup.get(network_id, False)
             if (
                 not internet_policies_configured
                 and not vpn_uplink_selection_configured
                 and not vpn_exclusion_configured
+                and not adaptive_enabled
             ):
                 feature_level = "Essential"
             elif (
                 internet_policies_configured
                 or vpn_uplink_selection_configured
                 or vpn_exclusion_configured
+                or adaptive_enabled
             ):
                 feature_level = "Advantage"
             else:
@@ -422,6 +463,7 @@ def _write_csv(
                     internet_policies_configured,
                     vpn_uplink_selection_configured,
                     vpn_exclusion_configured,
+                    adaptive_enabled,
                     feature_level,
                 ]
             )
@@ -481,6 +523,16 @@ def _fetch_all_data(
     logger.debug("Retrieved %d VPN exclusion entries", len(vpn_exclusions_by_network))
     print(f"✓ {len(vpn_exclusions_by_network)} VPN exclusion entries retrieved")
 
+    print("Fetching Adaptive Policy settings...")
+    adaptive_policy_settings_response = client.get(
+        f"{base_url}/adaptivePolicy/settings",
+        headers=headers,
+    )
+    adaptive_policy_settings_response.raise_for_status()
+    adaptive_enabled_networks = _adaptive_enabled_networks(adaptive_policy_settings_response.json())
+    logger.debug("Retrieved %d adaptive-enabled networks", len(adaptive_enabled_networks))
+    print(f"✓ {len(adaptive_enabled_networks)} adaptive-enabled networks retrieved")
+
     print("Fetching per-network uplink selection policies...")
     vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(
         client, headers, _inventory_rows(inventory_devices)
@@ -495,6 +547,7 @@ def _fetch_all_data(
         "internet_policies": internet_policies,
         "appliance_uplink_statuses": appliance_uplink_statuses,
         "vpn_exclusions_by_network": vpn_exclusions_by_network,
+        "adaptive_enabled_networks": adaptive_enabled_networks,
         "vpn_uplink_selection_lookup": vpn_uplink_selection_lookup,
     }
 
@@ -542,6 +595,11 @@ def _configure_logging(output_file: str, api_key: str) -> None:
     base = os.path.splitext(output_file)[0]
     log_file = base + ".log"
     handler = logging.FileHandler(log_file)
+    try:
+        os.chmod(log_file, 0o600)
+    except OSError:
+        # Best effort: keep logging even if chmod is not supported.
+        pass
     handler.addFilter(_SensitiveDataFilter(api_key))
     logging.basicConfig(
         level=logging.DEBUG,
@@ -549,7 +607,7 @@ def _configure_logging(output_file: str, api_key: str) -> None:
         handlers=[handler],
     )
     logger = logging.getLogger(__name__)
-    logger.info("Logging configured. Details written to %s", log_file)
+    logger.info("Logging configured. Details written to %s", _sanitize_log_text(log_file))
 
 
 def _validate_api_key_and_org(client: httpx.Client, headers: dict[str, str], org_id: str) -> None:
@@ -618,7 +676,8 @@ def main() -> None:
             "Accept": "application/json",
         }
 
-        with httpx.Client(timeout=30.0) as client:
+        timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
+        with httpx.Client(timeout=timeout, verify=True) as client:
             logger.info("Validating API key and organization ID")
             _validate_api_key_and_org(client, headers, args.org_id)
             print(f"✓ API key validated, organization {args.org_id} is accessible")
@@ -646,6 +705,7 @@ def main() -> None:
             policy_lookup,
             network_name_lookup,
             data["vpn_uplink_selection_lookup"],
+            data["adaptive_enabled_networks"],
             wan_link_count_lookup,
             vpn_exclusion_lookup,
             args.file,
@@ -661,17 +721,17 @@ def main() -> None:
             body = exc.response.json()
         except ValueError:
             body = exc.response.text
-        error_msg = f"Meraki API error status={status}. {body}"
+        error_msg = f"Meraki API error status={status}. {_sanitize_log_text(body)}"
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
     except httpx.HTTPError as exc:
-        error_msg = f"HTTP request failed: {exc}"
+        error_msg = f"HTTP request failed: {_sanitize_log_text(exc)}"
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
     except (ValueError) as exc:
-        error_msg = str(exc)
+        error_msg = _sanitize_log_text(exc)
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
