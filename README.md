@@ -16,6 +16,7 @@ The following is audited in the MX configuration:
 | Adaptive Policy | adaptivePolicy | Micro-segmentation of traffic according to SGTs | Advantage |
 | VPN Status | VPN Statuses | Indicates if VPN is enabled on the appliance. | Not a license feature but provides context for SD-WAN usage |
 | Number of WAN Links | Appliance Uplink Statuses | Shows the number of operational WAN links, which can impact SD-WAN performance benefits. | Not a license feature but provides context for SD-WAN usage |
+| Number of Enabled WAN Links | Appliance Uplink Statuses | Shows the number of WAN links currently enabled on the appliance. | Not a license feature but provides context for WAN redundancy and utilization |
 
 
 ## Prerequisites
