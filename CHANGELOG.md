@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-13
+
+### Added
+- CSV output now includes `NumberWANLinkEnabled`, derived from `organizations/{organizationId}/appliance/uplink/statuses`
+
 ## [1.2.0] - 2026-05-13
 
 ### Security
