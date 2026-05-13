@@ -102,6 +102,7 @@ Written to the path specified by `-f`. Contains one row per MX appliance with th
 | `DeviceName` | Appliance device name |
 | `deviceSerial` | Appliance serial number |
 | `NumberWANLink` | Number of active WAN uplinks |
+| `NumberWANLinkEnabled` | Number of WAN uplinks currently enabled |
 | `VPN` | `True` if the appliance has AutoVPN status |
 | `InternetPolicies` | `True` if SD-Internet steering policies are configured |
 | `VPNUplinkSelection` | `True` if VPN uplink selection preferences are configured |

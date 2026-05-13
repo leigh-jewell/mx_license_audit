@@ -327,6 +327,65 @@ def _build_wan_link_count_lookup(appliance_uplink_statuses: Any) -> dict[str, in
     return lookup
 
 
+def _is_enabled_uplink(uplink: dict[str, Any]) -> bool:
+    """Return whether a WAN uplink should be treated as enabled.
+
+    Meraki payloads can represent enabled state using different fields depending
+    on platform/model/firmware. Prefer explicit boolean fields when present and
+    fall back to status strings.
+    """
+    enabled = uplink.get("enabled")
+    if isinstance(enabled, bool):
+        return enabled
+
+    active = uplink.get("active")
+    if isinstance(active, bool):
+        return active
+
+    status = str(uplink.get("status", "")).strip().lower()
+    if not status:
+        return False
+
+    enabled_statuses = {"active", "ready", "connected", "up"}
+    disabled_statuses = {
+        "not connected",
+        "inactive",
+        "down",
+        "failed",
+        "disabled",
+        "dormant",
+    }
+    if status in enabled_statuses:
+        return True
+    if status in disabled_statuses:
+        return False
+    return False
+
+
+def _build_wan_link_enabled_count_lookup(appliance_uplink_statuses: Any) -> dict[str, int]:
+    """Build network-to-enabled-WAN-link-count lookup.
+
+    Args:
+        appliance_uplink_statuses: Response payload from appliance uplink statuses endpoint.
+
+    Returns:
+        dict[str, int]: Mapping of network ID to number of enabled uplinks.
+    """
+    lookup: dict[str, int] = {}
+    for item in _as_list(appliance_uplink_statuses):
+        network_id = str(item.get("networkId", "")).strip()
+        if not network_id:
+            continue
+        uplinks = item.get("uplinks")
+        if not isinstance(uplinks, list):
+            lookup[network_id] = 0
+            continue
+        lookup[network_id] = sum(
+            1 for uplink in uplinks if isinstance(uplink, dict) and _is_enabled_uplink(uplink)
+        )
+    return lookup
+
+
 def _build_vpn_exclusion_lookup(vpn_exclusions_by_network: Any) -> dict[str, bool]:
     """Build network-to-VPN-exclusion-presence lookup.
 
@@ -371,6 +430,7 @@ def _write_csv(
     vpn_uplink_selection_lookup: dict[str, bool],
     adaptive_enabled_networks: set[str],
     wan_link_count_lookup: dict[str, int],
+    wan_link_enabled_count_lookup: dict[str, int],
     vpn_exclusion_lookup: dict[str, bool],
     output_file: str,
 ) -> dict[str, int]:
@@ -385,6 +445,7 @@ def _write_csv(
         vpn_uplink_selection_lookup: Network ID to VPN uplink selection presence mapping.
         adaptive_enabled_networks: Network IDs with adaptive policy enabled.
         wan_link_count_lookup: Network ID to WAN link count mapping.
+        wan_link_enabled_count_lookup: Network ID to enabled WAN link count mapping.
         vpn_exclusion_lookup: Network ID to VPN exclusion presence mapping.
         output_file: Path to output CSV file.
 
@@ -405,6 +466,7 @@ def _write_csv(
                 "DeviceName",
                 "deviceSerial",
                 "NumberWANLink",
+                "NumberWANLinkEnabled",
                 "VPN",
                 "InternetPolicies",
                 "VPNUplinkSelection",
@@ -430,6 +492,7 @@ def _write_csv(
             vpn_uplink_selection_configured = vpn_uplink_selection_lookup.get(network_id, False)
             adaptive_enabled = network_id in adaptive_enabled_networks
             number_wan_link = wan_link_count_lookup.get(network_id, 0)
+            number_wan_link_enabled = wan_link_enabled_count_lookup.get(network_id, 0)
             vpn_exclusion_configured = vpn_exclusion_lookup.get(network_id, False)
             if (
                 not internet_policies_configured
@@ -459,6 +522,7 @@ def _write_csv(
                     _sanitize_csv_field(row["device_name"]),
                     device_serial,
                     number_wan_link,
+                    number_wan_link_enabled,
                     vpn_enabled,
                     internet_policies_configured,
                     vpn_uplink_selection_configured,
@@ -692,6 +756,7 @@ def main() -> None:
         policy_lookup = _build_policy_lookup(data["internet_policies"])
         network_name_lookup = _build_network_name_lookup(data["networks"])
         wan_link_count_lookup = _build_wan_link_count_lookup(data["appliance_uplink_statuses"])
+        wan_link_enabled_count_lookup = _build_wan_link_enabled_count_lookup(data["appliance_uplink_statuses"])
         vpn_exclusion_lookup = _build_vpn_exclusion_lookup(data["vpn_exclusions_by_network"])
         print("✓ Lookup tables built")
         logger.info("Lookup tables built successfully")
@@ -707,6 +772,7 @@ def main() -> None:
             data["vpn_uplink_selection_lookup"],
             data["adaptive_enabled_networks"],
             wan_link_count_lookup,
+            wan_link_enabled_count_lookup,
             vpn_exclusion_lookup,
             args.file,
         )
