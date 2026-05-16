@@ -39,9 +39,14 @@ If you don't have Python installed then use UV to install it.
 ```bash
 uv python install
 ```
-Set an environment variable with a Meraki Dashboard API and run the script:
+
+Store your API key in the system keyring (one-time setup):
 ```bash
-export MERAKI_DASHBOARD_API_KEY=<your-api-key>
+python manage_api_key.py set <your-api-key>
+```
+
+Run the audit:
+```bash
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
@@ -81,25 +86,26 @@ Store your API key once in the system keyring, and the script will use it automa
 
 **macOS:**
 ```bash
-security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <your-api-key>
+python manage_api_key.py set <your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
 **Windows (PowerShell):**
 ```powershell
-python -c "import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<your-api-key>')"
+python manage_api_key.py set <your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
 **Linux:**
 ```bash
-python -c "import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<your-api-key>')"
+python manage_api_key.py set <your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
-Alternatively, use the helper script:
+Alternatively, export from keyring to environment:
 ```bash
-eval "$(uv run get_api_key.py)"  # Exports the key from keyring to environment
+eval "$(python manage_api_key.py get)"  # Exports the key from keyring to environment
+uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
 > **Security:** Store your API key in the system keyring rather than environment variables. Never paste your key into the command line directly — it will appear in shell history.
@@ -119,6 +125,43 @@ uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT_FILE.csv>
 
 ```bash
 uv run mx_license_audit.py -o 123456 -f audit_results.csv
+```
+
+## API Key Manager
+
+Use `manage_api_key.py` to manage your Meraki Dashboard API key securely in the system keyring.
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `python manage_api_key.py set <key>` | Store or update API key in the system keyring |
+| `python manage_api_key.py get` | Retrieve API key and print as shell export statement |
+| `python manage_api_key.py read` | Display API key status and masked value |
+| `python manage_api_key.py delete` | Delete API key from the system keyring |
+| `python manage_api_key.py delete -f` | Delete without confirmation prompt |
+
+### Examples
+
+**Store your API key:**
+```bash
+python manage_api_key.py set your-api-key-here
+```
+
+**Retrieve and use in current shell session (macOS/Linux):**
+```bash
+eval "$(python manage_api_key.py get)"
+uv run mx_license_audit.py -o 123456 -f audit_results.csv
+```
+
+**Check key status:**
+```bash
+python manage_api_key.py read
+```
+
+**Delete key:**
+```bash
+python manage_api_key.py delete
 ```
 
 ## Output Files

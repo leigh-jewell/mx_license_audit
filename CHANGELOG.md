@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-05-16
+
+### Added
+- New `manage_api_key.py` tool for complete API key management with cross-platform support
+  - Commands: `set` (store/update), `get` (retrieve for shell export), `read` (display status), `delete` (remove with confirmation)
+  - Automatically detects and uses the appropriate keystore: Keychain (macOS), Credential Manager (Windows), Secret Service (Linux)
+  - Handles platform-specific setup instructions if keyring backend unavailable
+  - Provides masked key display for security
+
+### Removed
+- Old `get_api_key.py` script replaced by comprehensive `manage_api_key.py` tool
+
+### Changed
+- Updated README with documentation for new `manage_api_key.py` commands and examples
+- Quick Start now recommends using `manage_api_key.py set` for consistent cross-platform key setup
+
 ## [2.0.2] - 2026-05-16
 
 ### Changed
