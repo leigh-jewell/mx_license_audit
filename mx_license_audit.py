@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "keyring>=25.7.0",
+#     "meraki>=3.1.0",
+# ]
+# ///
 """Meraki MX Appliance Configuration Audit
 
 This script uses the Meraki Dashboard API to audit MX appliance configuration to see if they are 

@@ -33,19 +33,13 @@ The following is audited in the MX configuration:
 
 ## Quick Start
 
+[Install UV](https://docs.astral.sh/uv/getting-started/installation/) for your OS.
+
+If you don't have Python installed then use UV to install it.
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip sync requirements.lock
-
-# Store your API key in the system keyring (one-time setup)
-security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <your-api-key>
-
-# Run the audit
-uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
+uv python install
 ```
-
-**Or** use the environment variable:
+Set an environment variable with a Meraki Dashboard API and run the script:
 ```bash
 export MERAKI_DASHBOARD_API_KEY=<your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
@@ -55,7 +49,6 @@ uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 
 ```bash
 uv venv
-source .venv/bin/activate
 uv pip sync requirements.lock
 ```
 
