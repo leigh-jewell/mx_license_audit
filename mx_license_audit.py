@@ -738,13 +738,14 @@ def _validate_api_key_and_org(dashboard: meraki.DashboardAPI, org_id: str) -> No
             perPage=PER_PAGE,
         )
 
-        org_ids = {org.get("id") for org in orgs if isinstance(org, dict)}
-        if org_id not in org_ids:
-            available_ids = ", ".join(sorted(org_ids))
-            print(
-                f"[ERROR] Organization ID '{org_id}' is not available with this API key.\n"
-                f"Available organization IDs: {available_ids}"
-            )
+        org_lookup = {org.get("id"): org.get("name", "N/A") for org in orgs if isinstance(org, dict) and org.get("id")}
+        if org_id not in org_lookup:
+            print(f"[ERROR] Organization ID '{org_id}' is not available with this API key.")
+            print("\nAvailable organizations:")
+            print(f"{'Organization ID':<20} {'Organization Name'}")
+            print("-" * 60)
+            for oid in sorted(org_lookup.keys()):
+                print(f"{oid:<20} {org_lookup[oid]}")
             raise SystemExit(1)
 
     except meraki.APIKeyError as exc:

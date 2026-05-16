@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-05-16
+
+### Changed
+- Enhanced organization validation error message: when an invalid organization ID is provided, the script now displays a formatted table with both Organization ID and Organization Name for easy reference
+
 ## [2.0.1] - 2026-05-16
 
 ### Added
