@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added PEP 723 inline script metadata to `manage_api_key.py` so `uv run manage_api_key.py ...` resolves dependencies automatically.
+
+### Changed
+- Updated README examples to use `uv run manage_api_key.py` consistently.
+- Simplified Option 2 keyring documentation by removing OS-specific subsections, since `manage_api_key.py` now handles platform differences.
+
 ## [2.0.3] - 2026-05-16
 
 ### Added

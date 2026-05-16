@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "keyring>=25.0",
+# ]
+# ///
+
 """Manage Meraki Dashboard API key in OS keystore with cross-platform support.
 
 This tool provides a simple interface to store, retrieve, update, and delete

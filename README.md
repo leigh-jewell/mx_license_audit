@@ -42,7 +42,7 @@ uv python install
 
 Store your API key in the system keyring (one-time setup):
 ```bash
-python manage_api_key.py set <your-api-key>
+uv run manage_api_key.py set <your-api-key>
 ```
 
 Run the audit:
@@ -84,27 +84,14 @@ uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 
 Store your API key once in the system keyring, and the script will use it automatically:
 
-**macOS:**
 ```bash
-python manage_api_key.py set <your-api-key>
-uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
-```
-
-**Windows (PowerShell):**
-```powershell
-python manage_api_key.py set <your-api-key>
-uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
-```
-
-**Linux:**
-```bash
-python manage_api_key.py set <your-api-key>
+uv run manage_api_key.py set <your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
 Alternatively, export from keyring to environment:
 ```bash
-eval "$(python manage_api_key.py get)"  # Exports the key from keyring to environment
+eval "$(uv run manage_api_key.py get)"  # Exports the key from keyring to environment
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
@@ -135,33 +122,33 @@ Use `manage_api_key.py` to manage your Meraki Dashboard API key securely in the 
 
 | Command | Description |
 |---|---|
-| `python manage_api_key.py set <key>` | Store or update API key in the system keyring |
-| `python manage_api_key.py get` | Retrieve API key and print as shell export statement |
-| `python manage_api_key.py read` | Display API key status and masked value |
-| `python manage_api_key.py delete` | Delete API key from the system keyring |
-| `python manage_api_key.py delete -f` | Delete without confirmation prompt |
+| `uv run manage_api_key.py set <key>` | Store or update API key in the system keyring |
+| `uv run manage_api_key.py get` | Retrieve API key and print as shell export statement |
+| `uv run manage_api_key.py read` | Display API key status and masked value |
+| `uv run manage_api_key.py delete` | Delete API key from the system keyring |
+| `uv run manage_api_key.py delete -f` | Delete without confirmation prompt |
 
 ### Examples
 
 **Store your API key:**
 ```bash
-python manage_api_key.py set your-api-key-here
+uv run manage_api_key.py set your-api-key-here
 ```
 
 **Retrieve and use in current shell session (macOS/Linux):**
 ```bash
-eval "$(python manage_api_key.py get)"
+eval "$(uv run manage_api_key.py get)"
 uv run mx_license_audit.py -o 123456 -f audit_results.csv
 ```
 
 **Check key status:**
 ```bash
-python manage_api_key.py read
+uv run manage_api_key.py read
 ```
 
 **Delete key:**
 ```bash
-python manage_api_key.py delete
+uv run manage_api_key.py delete
 ```
 
 ## Output Files
