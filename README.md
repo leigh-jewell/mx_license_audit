@@ -37,7 +37,17 @@ The following is audited in the MX configuration:
 uv venv
 source .venv/bin/activate
 uv pip sync requirements.lock
-eval "$(uv run get_api_key.py)"
+
+# Store your API key in the system keyring (one-time setup)
+security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <your-api-key>
+
+# Run the audit
+uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
+```
+
+**Or** use the environment variable:
+```bash
+export MERAKI_DASHBOARD_API_KEY=<your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
@@ -58,21 +68,48 @@ uv pip sync requirements.lock
 
 ## Configuration
 
-Configure your OS keystore with the API key under service `MERAKI_DASHBOARD_API_KEY`.
+The script checks for your API key in two locations, in order:
 
-**macOS / Linux (bash/zsh):**
+1. **Environment variable** `MERAKI_DASHBOARD_API_KEY` (if set)
+2. **System keyring** (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
+
+If neither is found, the script exits with instructions on how to store your key.
+
+### Option 1: Environment Variable
+
 ```bash
-eval "$(uv run get_api_key.py)"
+export MERAKI_DASHBOARD_API_KEY=<your-api-key>
+uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
+```
+
+### Option 2: System Keyring (Recommended)
+
+Store your API key once in the system keyring, and the script will use it automatically:
+
+**macOS:**
+```bash
+security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <your-api-key>
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
 **Windows (PowerShell):**
 ```powershell
-Invoke-Expression (uv run get_api_key.py)
+python -c "import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<your-api-key>')"
 uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
 ```
 
-> **Security:** Never paste your API key into the command line directly — it will appear in shell history.
+**Linux:**
+```bash
+python -c "import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<your-api-key>')"
+uv run mx_license_audit.py -o <ORG_ID> -f <OUTPUT.csv>
+```
+
+Alternatively, use the helper script:
+```bash
+eval "$(uv run get_api_key.py)"  # Exports the key from keyring to environment
+```
+
+> **Security:** Store your API key in the system keyring rather than environment variables. Never paste your key into the command line directly — it will appear in shell history.
 
 ## Usage
 

@@ -42,8 +42,11 @@ import argparse
 import csv
 import logging
 import os
+import sys
 from typing import Any
 
+import keyring
+import keyring.errors
 import meraki
 
 
@@ -56,6 +59,52 @@ def _sanitize_log_text(value: Any) -> str:
     Replaces CR/LF characters so attackers cannot forge extra log lines.
     """
     return str(value).replace("\r", "\\r").replace("\n", "\\n")
+
+
+def _get_api_key_from_environment_or_keyring() -> str:
+    """Retrieve Meraki API key from environment or system keyring.
+
+    Checks in order:
+      1. MERAKI_DASHBOARD_API_KEY environment variable
+      2. System keyring (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
+
+    Returns:
+        str: The API key.
+
+    Raises:
+        SystemExit: If no API key found in either location.
+    """
+    # Try environment variable first
+    api_key = os.getenv("MERAKI_DASHBOARD_API_KEY", "").strip()
+    if api_key:
+        return api_key
+
+    # Try keyring
+    try:
+        api_key = keyring.get_password("MERAKI_DASHBOARD_API_KEY", "api_key")
+    except keyring.errors.NoKeyringError:
+        print(
+            "[ERROR] No API key found in environment or keyring.\n"
+            "To store in keyring:\n"
+            "  macOS: security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <key>\n"
+            "  Windows: python -c \"import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<key>')\"\n"
+            "  Linux: python -c \"import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<key>')\"",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
+
+    if not api_key:
+        print(
+            "[ERROR] No API key found in environment or keyring.\n"
+            "To store in keyring:\n"
+            "  macOS: security add-generic-password -a api_key -s MERAKI_DASHBOARD_API_KEY -w <key>\n"
+            "  Windows: python -c \"import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<key>')\"\n"
+            "  Linux: python -c \"import keyring; keyring.set_password('MERAKI_DASHBOARD_API_KEY', 'api_key', '<key>')\"",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    return api_key
 
 
 def parse_args() -> argparse.Namespace:
@@ -716,15 +765,12 @@ def main() -> None:
     args = parse_args()
 
     try:
-        api_key = os.getenv("MERAKI_DASHBOARD_API_KEY", "").strip()
-        if not api_key:
-            print("[ERROR] MERAKI_DASHBOARD_API_KEY is not set. Fix: export MERAKI_DASHBOARD_API_KEY before running this script.")
-            raise SystemExit(1)
+        api_key = _get_api_key_from_environment_or_keyring()
 
         _configure_logging(args.file, api_key)
         logger = logging.getLogger(__name__)
         logger.info("Starting appliance audit for org %s", args.org_id)
-        logger.debug("API key loaded from environment")
+        logger.debug("API key loaded from environment or keyring")
 
         dashboard = meraki.DashboardAPI(
             api_key=api_key,

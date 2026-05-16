@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-05-16
+
+### Added
+- Integrated system keyring support for API key storage: script now checks `MERAKI_DASHBOARD_API_KEY` environment variable first, then falls back to system keyring
+  - Keychain on macOS, Credential Manager on Windows, Secret Service on Linux
+  - Eliminates the need to export API key in every shell session
+  - Provides platform-specific instructions if no key is found
+  - Added `keyring>=25.0` dependency for cross-platform keyring access
+- New `_get_api_key_from_environment_or_keyring()` function centralizes API key resolution
+
+### Changed
+- Updated README with clarified configuration instructions for both environment variable and keyring approaches
+- Quick Start section now emphasizes storing key in system keyring (one-time setup)
+
 ## [2.0.0] - 2026-05-16
 
 ### Changed
