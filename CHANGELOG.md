@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-05-16
+
+### Changed
+- Synchronized changelog and release tags after creating `v2.0.4` before recording its changelog section.
+- No functional code changes; release created to align repository history.
+
+## [2.0.4] - 2026-05-16
+
 ### Added
 - Added PEP 723 inline script metadata to `manage_api_key.py` so `uv run manage_api_key.py ...` resolves dependencies automatically.
 
