@@ -2,6 +2,8 @@
 
 Queries the Meraki Dashboard API to audit MX appliances configuration across an organisation and produces a CSV report classifying each appliance as **Advantage**, **Essential**, or **Unknown** based on active SD-WAN/VPN and Adaptive Policy features enabled. Very helpful for customers that have moved to subscription licensing and want to have different license levels for each network.
 
+The script uses the official Meraki Python SDK for authentication, retries, and pagination.
+
 # Reference:
 See the Meraki documentation for a list of features for each each license level. Be aware there are a number of non-configuration features in Advantage. This audit is just for configured features.
 https://documentation.meraki.com/Platform_Management/Product_Information/Licensing/Subscription_-_MX_Licensing#Features_Highlights

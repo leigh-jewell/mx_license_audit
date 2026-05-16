@@ -42,11 +42,9 @@ import argparse
 import csv
 import logging
 import os
-import sys
-import time
 from typing import Any
 
-import httpx
+import meraki
 
 
 PER_PAGE = 200
@@ -200,37 +198,33 @@ def _build_network_name_lookup(networks: Any) -> dict[str, str]:
     return lookup
 
 
-def _fetch_all_pages(
-    client: httpx.Client,
-    url: str,
-    headers: dict[str, str],
-    per_page: int = PER_PAGE,
+def _get_organization_appliance_sdwan_internet_policies(
+    dashboard: meraki.DashboardAPI,
+    org_id: str,
 ) -> list[dict[str, Any]]:
-    """Fetch all pages from a paginated Meraki API endpoint using Link headers.
+    """Fetch org-wide SD-WAN internet policies through the SDK session.
+
+    The current generated SDK exposes the update operation for this endpoint but
+    not the corresponding org-wide GET, so this uses the SDK's own session for
+    pagination, retries, and authentication.
 
     Args:
-        client: Configured HTTP client.
-        url: Initial endpoint URL.
-        headers: Request headers.
-        per_page: Number of records to request per page.
+        dashboard: Configured Meraki SDK client.
+        org_id: Organization ID to query.
 
     Returns:
-        list[dict[str, Any]]: Combined records across all pages.
+        list[dict[str, Any]]: Internet policy entries across all pages.
     """
-    records: list[dict[str, Any]] = []
-    next_url: str | None = url
-    params: dict[str, int] | None = {"perPage": per_page}
-
-    while next_url:
-        response = client.get(next_url, headers=headers, params=params)
-        response.raise_for_status()
-        records.extend(_as_list(response.json()))
-
-        next_link = response.links.get("next", {})
-        next_url = next_link.get("url")
-        params = None
-
-    return records
+    metadata = {
+        "tags": ["appliance", "configure", "sdwan", "internetPolicies"],
+        "operation": "getOrganizationApplianceSdwanInternetPolicies",
+    }
+    return dashboard._session.get_pages(
+        metadata,
+        f"/organizations/{org_id}/appliance/sdwan/internetPolicies",
+        params={"perPage": PER_PAGE},
+        total_pages=-1,
+    )
 
 
 def _adaptive_enabled_networks(adaptive_policy_settings: Any) -> set[str]:
@@ -251,15 +245,13 @@ def _adaptive_enabled_networks(adaptive_policy_settings: Any) -> set[str]:
 
 
 def _build_vpn_uplink_selection_lookup(
-    client: httpx.Client,
-    headers: dict[str, str],
+    dashboard: meraki.DashboardAPI,
     rows: list[dict[str, str]],
 ) -> dict[str, bool]:
     """Build network-to-VPN-uplink-selection lookup.
 
     Args:
-        client: Configured HTTP client.
-        headers: Request headers.
+        dashboard: Configured Meraki SDK client.
         rows: Inventory-backed appliance rows.
 
     Returns:
@@ -270,26 +262,25 @@ def _build_vpn_uplink_selection_lookup(
     logger = logging.getLogger(__name__)
 
     for network_id in network_ids:
-        uplink_selection_url = (
-            f"https://api.meraki.com/api/v1/networks/{network_id}/appliance/trafficShaping/uplinkSelection"
-        )
         for attempt in range(3):
-            response = client.get(uplink_selection_url, headers=headers)
-            if response.status_code == 429:
-                retry_after = int(response.headers.get("Retry-After", 1))
-                logger.warning(
-                    "Rate limited on network %s, retrying after %ds (attempt %d/3)",
-                    _sanitize_log_text(network_id), retry_after, attempt + 1,
-                )
-                time.sleep(retry_after)
-                continue
+            try:
+                payload = dashboard.appliance.getNetworkApplianceTrafficShapingUplinkSelection(network_id)
+            except meraki.APIError as exc:
+                if getattr(exc, "status", None) == 400:
+                    lookup[network_id] = False
+                    break
+                if getattr(exc, "status", None) == 429 and attempt < 2:
+                    logger.warning(
+                        "Rate limited on network %s, retrying with SDK backoff (attempt %d/3)",
+                        _sanitize_log_text(network_id),
+                        attempt + 1,
+                    )
+                    continue
+                raise
+            lookup[network_id] = (
+                bool(payload.get("vpnTrafficUplinkPreferences")) if isinstance(payload, dict) else False
+            )
             break
-        if response.status_code == 400:
-            lookup[network_id] = False
-            continue
-        response.raise_for_status()
-        payload = response.json()
-        lookup[network_id] = bool(payload.get("vpnTrafficUplinkPreferences")) if isinstance(payload, dict) else False
 
     return lookup
 
@@ -536,71 +527,79 @@ def _write_csv(
 
 
 def _fetch_all_data(
-    client: httpx.Client,
-    headers: dict[str, str],
+    dashboard: meraki.DashboardAPI,
     org_id: str,
 ) -> dict[str, Any]:
     """Fetch all required data from the Meraki API for an organization.
 
     Args:
-        client: Configured HTTP client.
-        headers: Request headers.
+        dashboard: Configured Meraki SDK client.
         org_id: Organization ID to audit.
 
     Returns:
         dict[str, Any]: Mapping of data keys to their fetched payloads.
     """
     logger = logging.getLogger(__name__)
-    base_url = f"https://api.meraki.com/api/v1/organizations/{org_id}"
-
     print("Fetching inventory devices...")
     logger.info("Fetching inventory devices")
-    inventory_devices = _fetch_all_pages(client, f"{base_url}/inventory/devices", headers, per_page=1000)
+    inventory_devices = dashboard.organizations.getOrganizationInventoryDevices(
+        org_id,
+        total_pages=-1,
+        perPage=PER_PAGE,
+    )
     appliance_count = len(_inventory_rows(inventory_devices))
     print(f"✓ Found {appliance_count} appliance devices")
     logger.info("Found %d appliance devices", appliance_count)
 
     print("Fetching networks...")
-    networks = _fetch_all_pages(client, f"{base_url}/networks", headers)
+    networks = dashboard.organizations.getOrganizationNetworks(
+        org_id,
+        total_pages=-1,
+        perPage=PER_PAGE,
+    )
     logger.debug("Retrieved %d networks", len(networks))
     print(f"✓ {len(networks)} networks retrieved")
 
     print("Fetching VPN statuses...")
-    vpn_statuses = _fetch_all_pages(client, f"{base_url}/appliance/vpn/statuses", headers, per_page=300)
+    vpn_statuses = dashboard.appliance.getOrganizationApplianceVpnStatuses(
+        org_id,
+        total_pages=-1,
+        perPage=PER_PAGE,
+    )
     logger.debug("Retrieved %d VPN status entries", len(vpn_statuses))
     print(f"✓ {len(vpn_statuses)} VPN status entries retrieved")
 
     print("Fetching internet policies...")
-    internet_policies = _fetch_all_pages(client, f"{base_url}/appliance/sdwan/internetPolicies", headers)
+    internet_policies = _get_organization_appliance_sdwan_internet_policies(dashboard, org_id)
     logger.debug("Retrieved %d internet policy entries", len(internet_policies))
     print(f"✓ {len(internet_policies)} internet policy entries retrieved")
 
     print("Fetching appliance uplink statuses...")
-    appliance_uplink_statuses = _fetch_all_pages(client, f"{base_url}/appliance/uplink/statuses", headers, per_page=1000)
+    appliance_uplink_statuses = dashboard.appliance.getOrganizationApplianceUplinkStatuses(
+        org_id,
+        total_pages=-1,
+        perPage=PER_PAGE,
+    )
     logger.debug("Retrieved %d appliance uplink status entries", len(appliance_uplink_statuses))
     print(f"✓ {len(appliance_uplink_statuses)} appliance uplink status entries retrieved")
 
     print("Fetching VPN exclusions...")
-    vpn_exclusions_by_network = _fetch_all_pages(
-        client, f"{base_url}/appliance/trafficShaping/vpnExclusions/byNetwork", headers, per_page=1000
+    vpn_exclusions_by_network = dashboard.appliance.getOrganizationApplianceTrafficShapingVpnExclusionsByNetwork(
+        org_id,
+        total_pages=-1,
+        perPage=PER_PAGE,
     )
     logger.debug("Retrieved %d VPN exclusion entries", len(vpn_exclusions_by_network))
     print(f"✓ {len(vpn_exclusions_by_network)} VPN exclusion entries retrieved")
 
     print("Fetching Adaptive Policy settings...")
-    adaptive_policy_settings_response = client.get(
-        f"{base_url}/adaptivePolicy/settings",
-        headers=headers,
-    )
-    adaptive_policy_settings_response.raise_for_status()
-    adaptive_enabled_networks = _adaptive_enabled_networks(adaptive_policy_settings_response.json())
+    adaptive_policy_settings = dashboard.organizations.getOrganizationAdaptivePolicySettings(org_id)
+    adaptive_enabled_networks = _adaptive_enabled_networks(adaptive_policy_settings)
     logger.debug("Retrieved %d adaptive-enabled networks", len(adaptive_enabled_networks))
     print(f"✓ {len(adaptive_enabled_networks)} adaptive-enabled networks retrieved")
 
     print("Fetching per-network uplink selection policies...")
-    vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(
-        client, headers, _inventory_rows(inventory_devices)
-    )
+    vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(dashboard, _inventory_rows(inventory_devices))
     print("✓ Per-network uplink selections retrieved")
     logger.debug("Per-network uplink selection lookup built successfully")
 
@@ -674,29 +673,21 @@ def _configure_logging(output_file: str, api_key: str) -> None:
     logger.info("Logging configured. Details written to %s", _sanitize_log_text(log_file))
 
 
-def _validate_api_key_and_org(client: httpx.Client, headers: dict[str, str], org_id: str) -> None:
+def _validate_api_key_and_org(dashboard: meraki.DashboardAPI, org_id: str) -> None:
     """Validate API key and confirm organization ID is accessible.
 
     Args:
-        client: Shared HTTP client.
-        headers: Request headers including Authorization.
+        dashboard: Configured Meraki SDK client.
         org_id: Organization ID to verify.
 
     Raises:
         SystemExit: If API key is invalid or organization ID is not accessible.
     """
     try:
-        response = client.get(
-            "https://api.meraki.com/api/v1/organizations",
-            headers=headers,
+        orgs = dashboard.organizations.getOrganizations(
+            total_pages=-1,
+            perPage=PER_PAGE,
         )
-
-        if response.status_code == 401:
-            print("[ERROR] API key is invalid. Please check your MERAKI_DASHBOARD_API_KEY.")
-            raise SystemExit(1)
-
-        response.raise_for_status()
-        orgs = response.json()
 
         org_ids = {org.get("id") for org in orgs if isinstance(org, dict)}
         if org_id not in org_ids:
@@ -707,21 +698,21 @@ def _validate_api_key_and_org(client: httpx.Client, headers: dict[str, str], org
             )
             raise SystemExit(1)
 
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        try:
-            body = exc.response.json()
-        except ValueError:
-            body = exc.response.text
-        print(f"[ERROR] Meraki API error status={status}. {body}")
+    except meraki.APIKeyError as exc:
+        print("[ERROR] API key is invalid. Please check your MERAKI_DASHBOARD_API_KEY.")
         raise SystemExit(1) from exc
-    except httpx.HTTPError as exc:
-        print(f"[ERROR] HTTP request failed: {exc}")
+    except meraki.APIError as exc:
+        status = getattr(exc, "status", "unknown")
+        message = _sanitize_log_text(exc)
+        print(f"[ERROR] Meraki API error status={status}. {message}")
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        print(f"[ERROR] HTTP request failed: {_sanitize_log_text(exc)}")
         raise SystemExit(1) from exc
 
 
 def main() -> None:
-    """Run prototype requests and write appliance audit CSV file."""
+    """Run requests and write appliance audit CSV file."""
     args = parse_args()
 
     try:
@@ -735,18 +726,20 @@ def main() -> None:
         logger.info("Starting appliance audit for org %s", args.org_id)
         logger.debug("API key loaded from environment")
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "application/json",
-        }
+        dashboard = meraki.DashboardAPI(
+            api_key=api_key,
+            single_request_timeout=30,
+            wait_on_rate_limit=True,
+            maximum_retries=2,
+            output_log=False,
+            print_console=False,
+            suppress_logging=True,
+        )
+        logger.info("Validating API key and organization ID")
+        _validate_api_key_and_org(dashboard, args.org_id)
+        print(f"✓ API key validated, organization {args.org_id} is accessible")
 
-        timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
-        with httpx.Client(timeout=timeout, verify=True) as client:
-            logger.info("Validating API key and organization ID")
-            _validate_api_key_and_org(client, headers, args.org_id)
-            print(f"✓ API key validated, organization {args.org_id} is accessible")
-
-            data = _fetch_all_data(client, headers, args.org_id)
+        data = _fetch_all_data(dashboard, args.org_id)
 
         logger.info("All API calls completed successfully")
         print("Building lookup tables...")
@@ -781,17 +774,18 @@ def main() -> None:
                     counts['Total'], counts['Advantage'], counts['Essential'], counts['Unknown'])
         print(f"✓ Audit complete. Results saved to {args.file}")
         logger.info("Audit completed successfully. Results saved to %s", args.file)
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        try:
-            body = exc.response.json()
-        except ValueError:
-            body = exc.response.text
-        error_msg = f"Meraki API error status={status}. {_sanitize_log_text(body)}"
+    except meraki.APIKeyError as exc:
+        error_msg = f"Invalid Meraki API key. {_sanitize_log_text(exc)}"
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
-    except httpx.HTTPError as exc:
+    except meraki.APIError as exc:
+        status = getattr(exc, "status", "unknown")
+        error_msg = f"Meraki API error status={status}. {_sanitize_log_text(exc)}"
+        print(f"[ERROR] {error_msg}")
+        logger.error(error_msg, exc_info=True)
+        raise SystemExit(1) from exc
+    except Exception as exc:
         error_msg = f"HTTP request failed: {_sanitize_log_text(exc)}"
         print(f"[ERROR] {error_msg}")
         logger.error(error_msg, exc_info=True)

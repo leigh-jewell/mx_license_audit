@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-16
+
+### Changed
+- **BREAKING**: Migrated from manual `httpx` transport to the official Meraki Python SDK (`meraki>=3.1`) for simplified code maintenance
+  - Removed manual HTTP client setup, custom headers, and timeout configuration
+  - Removed generic `_fetch_all_pages()` pagination helper; SDK now handles all pagination, retries, and rate-limit backoff automatically
+  - Simplified `_validate_api_key_and_org()` and `_fetch_all_data()` to use SDK methods
+  - Updated error handling to use SDK exception types (`meraki.APIError`, `meraki.APIKeyError`)
+  - Replaced manual retry logic in `_build_vpn_uplink_selection_lookup()` with SDK's built-in retry mechanism
+  - Removed `sys`, `time`, and `httpx` imports
+- Reduced codebase complexity by ~150 LOC while maintaining identical functionality
+- SDK manages authentication, pagination, and retry logic; no manual headers or timeout configuration required
+- Added single-purpose `_get_organization_appliance_sdwan_internet_policies()` helper for the one unsupported SDK endpoint (until SDK adds generated support)
+
+### Added
+- Documentation in README noting that the script now uses the official Meraki Python SDK
+
 ## [1.3.1] - 2026-05-13
 
 ### Changed
