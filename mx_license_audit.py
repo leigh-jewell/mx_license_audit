@@ -262,6 +262,24 @@ def _build_network_name_lookup(networks: Any) -> dict[str, str]:
     return lookup
 
 
+def _filter_rows_with_known_networks(
+    rows: list[dict[str, str]],
+    networks: Any,
+) -> tuple[list[dict[str, str]], int]:
+    """Keep only inventory rows assigned to a known network.
+
+    Args:
+        rows: Inventory-backed appliance rows.
+        networks: Response payload from organization networks endpoint.
+
+    Returns:
+        tuple[list[dict[str, str]], int]: Filtered rows and excluded row count.
+    """
+    known_network_ids = set(_build_network_name_lookup(networks))
+    filtered_rows = [row for row in rows if row.get("network_id") in known_network_ids]
+    return filtered_rows, len(rows) - len(filtered_rows)
+
+
 def _get_organization_appliance_sdwan_internet_policies(
     dashboard: meraki.DashboardAPI,
     org_id: str,
@@ -615,7 +633,8 @@ def _fetch_all_data(
         total_pages=-1,
         perPage=PER_PAGE,
     )
-    appliance_count = len(_inventory_rows(inventory_devices))
+    inventory_rows = _inventory_rows(inventory_devices)
+    appliance_count = len(inventory_rows)
     print(f"✓ Found {appliance_count} appliance devices")
     logger.info("Found %d appliance devices", appliance_count)
 
@@ -627,6 +646,14 @@ def _fetch_all_data(
     )
     logger.debug("Retrieved %d networks", len(networks))
     print(f"✓ {len(networks)} networks retrieved")
+
+    inventory_rows, excluded_inventory_rows = _filter_rows_with_known_networks(inventory_rows, networks)
+    if excluded_inventory_rows:
+        print(f"✓ Excluding {excluded_inventory_rows} appliance devices not assigned to a network")
+        logger.info(
+            "Excluded %d appliance devices not assigned to a known network",
+            excluded_inventory_rows,
+        )
 
     print("Fetching VPN statuses...")
     vpn_statuses = dashboard.appliance.getOrganizationApplianceVpnStatuses(
@@ -667,12 +694,12 @@ def _fetch_all_data(
     print(f"✓ {len(adaptive_enabled_networks)} adaptive-enabled networks retrieved")
 
     print("Fetching per-network uplink selection policies...")
-    vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(dashboard, _inventory_rows(inventory_devices))
+    vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(dashboard, inventory_rows)
     print("✓ Per-network uplink selections retrieved")
     logger.debug("Per-network uplink selection lookup built successfully")
 
     return {
-        "inventory_devices": inventory_devices,
+        "inventory_rows": inventory_rows,
         "networks": networks,
         "vpn_statuses": vpn_statuses,
         "internet_policies": internet_policies,
@@ -810,7 +837,7 @@ def main() -> None:
         logger.info("All API calls completed successfully")
         print("Building lookup tables...")
         logger.debug("Parsing API responses and building lookup tables")
-        rows = _inventory_rows(data["inventory_devices"])
+        rows = data["inventory_rows"]
         vpn_status_serials = _vpn_serials(data["vpn_statuses"])
         policy_lookup = _build_policy_lookup(data["internet_policies"])
         network_name_lookup = _build_network_name_lookup(data["networks"])
