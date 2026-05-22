@@ -654,6 +654,19 @@ def _fetch_all_data(
             "Excluded %d appliance devices not assigned to a known network",
             excluded_inventory_rows,
         )
+    if not inventory_rows:
+        print("✓ No appliance devices assigned to a network, skipping appliance configuration fetches")
+        logger.info("No appliance devices assigned to a known network; skipping appliance configuration fetches")
+        return {
+            "inventory_rows": [],
+            "networks": networks,
+            "vpn_statuses": [],
+            "internet_policies": [],
+            "appliance_uplink_statuses": [],
+            "vpn_exclusions_by_network": [],
+            "adaptive_enabled_networks": set(),
+            "vpn_uplink_selection_lookup": {},
+        }
 
     print("Fetching VPN statuses...")
     vpn_statuses = dashboard.appliance.getOrganizationApplianceVpnStatuses(
