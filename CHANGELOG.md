@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-05-22
+
+### Changed
+- Normalized missing inventory `networkId` values so null-like values do not become the literal string `None` during per-network appliance lookups.
+- Excluded appliance inventory rows that are not assigned to a known organization network from the audit output and downstream per-network configuration fetches.
+- Short-circuited appliance-specific API calls when no appliance devices remain after network filtering, allowing empty-org audits to complete without `404` errors.
+
 ## [2.0.5] - 2026-05-16
 
 ### Changed
