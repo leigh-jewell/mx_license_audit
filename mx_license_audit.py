@@ -68,6 +68,14 @@ def _sanitize_log_text(value: Any) -> str:
     return str(value).replace("\r", "\\r").replace("\n", "\\n")
 
 
+def _string_or_empty(value: Any) -> str:
+    """Return a stripped string, collapsing null-like values to empty."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() == "none" else text
+
+
 def _get_api_key_from_environment_or_keyring() -> str:
     """Retrieve Meraki API key from environment or system keyring.
 
@@ -193,9 +201,9 @@ def _inventory_rows(inventory_devices: Any) -> list[dict[str, str]]:
             continue
         rows.append(
             {
-                "network_id": str(device.get("networkId", "")),
-                "device_name": str(device.get("name", "")),
-                "device_serial": str(device.get("serial", "")),
+                "network_id": _string_or_empty(device.get("networkId")),
+                "device_name": _string_or_empty(device.get("name")),
+                "device_serial": _string_or_empty(device.get("serial")),
             }
         )
     return rows
@@ -314,7 +322,11 @@ def _build_vpn_uplink_selection_lookup(
         dict[str, bool]: Mapping of network ID to VPN uplink selection presence.
     """
     lookup: dict[str, bool] = {}
-    network_ids = {row["network_id"] for row in rows if row.get("network_id")}
+    network_ids = {
+        network_id
+        for row in rows
+        if (network_id := _string_or_empty(row.get("network_id")))
+    }
     logger = logging.getLogger(__name__)
 
     for network_id in network_ids:
