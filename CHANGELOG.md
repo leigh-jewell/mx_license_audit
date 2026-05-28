@@ -4,10 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-05-28
+
 ### Changed
 - Replaced the unsupported private Meraki SDK session call for org-wide `internetPolicies` with a direct `requests` implementation against `/organizations/{orgId}/appliance/sdwan/internetPolicies`.
 - Added graceful fallback behavior when internet policy fetches fail or return non-200 responses so the audit continues and outputs `NA` for `InternetPolicies` instead of exiting.
 - Added `requests>=2.32.0` dependency metadata for the new direct HTTP fetch path.
+- Mirrored user-facing stdout progress and summary messages into the log file so run output and log history remain aligned.
 
 ## [2.0.6] - 2026-05-22
 
