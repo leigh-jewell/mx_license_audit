@@ -3,6 +3,7 @@
 # dependencies = [
 #     "keyring>=25.7.0",
 #     "meraki>=3.1.0",
+#     "requests>=2.32.0",
 # ]
 # ///
 """Meraki MX Appliance Configuration Audit
@@ -55,9 +56,11 @@ from typing import Any
 import keyring
 import keyring.errors
 import meraki
+import requests
 
 
 PER_PAGE = 200
+POLICY_DATA_UNAVAILABLE = "__POLICY_DATA_UNAVAILABLE__"
 
 
 def _sanitize_log_text(value: Any) -> str:
@@ -235,8 +238,12 @@ def _build_policy_lookup(internet_policies: Any) -> dict[str, bool]:
     Returns:
         dict[str, bool]: Mapping of network ID to policy content presence.
     """
+    if internet_policies is None:
+        return {POLICY_DATA_UNAVAILABLE: True}
+
+    policy_items = _as_list(internet_policies)
     lookup: dict[str, bool] = {}
-    for item in _as_list(internet_policies):
+    for item in policy_items:
         network_id = str(item.get("networkId", "")).strip()
         if not network_id:
             continue
@@ -283,30 +290,69 @@ def _filter_rows_with_known_networks(
 def _get_organization_appliance_sdwan_internet_policies(
     dashboard: meraki.DashboardAPI,
     org_id: str,
-) -> list[dict[str, Any]]:
-    """Fetch org-wide SD-WAN internet policies through the SDK session.
-
-    The current generated SDK exposes the update operation for this endpoint but
-    not the corresponding org-wide GET, so this uses the SDK's own session for
-    pagination, retries, and authentication.
+    api_key: str,
+) -> list[dict[str, Any]] | None:
+    """Fetch org-wide SD-WAN internet policies using direct HTTP requests.
 
     Args:
         dashboard: Configured Meraki SDK client.
         org_id: Organization ID to query.
+        api_key: Meraki API key.
 
     Returns:
-        list[dict[str, Any]]: Internet policy entries across all pages.
+        list[dict[str, Any]] | None: Internet policy entries across all pages,
+            or None if the request fails.
     """
-    metadata = {
-        "tags": ["appliance", "configure", "sdwan", "internetPolicies"],
-        "operation": "getOrganizationApplianceSdwanInternetPolicies",
+    logger = logging.getLogger(__name__)
+    base_url = str(getattr(dashboard, "base_url", "https://api.meraki.com/api/v1")).rstrip("/")
+    url = f"{base_url}/organizations/{org_id}/appliance/sdwan/internetPolicies"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Accept": "application/json",
     }
-    return dashboard._session.get_pages(
-        metadata,
-        f"/organizations/{org_id}/appliance/sdwan/internetPolicies",
-        params={"perPage": PER_PAGE},
-        total_pages=-1,
-    )
+
+    policies: list[dict[str, Any]] = []
+    next_url: str | None = url
+    params: dict[str, Any] | None = {"perPage": PER_PAGE}
+    seen_urls: set[str] = set()
+
+    while next_url:
+        if next_url in seen_urls:
+            logger.warning("Stopping internet policy pagination due to repeated next URL")
+            break
+        seen_urls.add(next_url)
+
+        try:
+            response = requests.get(next_url, headers=headers, params=params, timeout=30)
+        except requests.RequestException as exc:
+            logger.warning(
+                "Internet policies request failed for org %s: %s",
+                _sanitize_log_text(org_id),
+                _sanitize_log_text(exc),
+            )
+            return None
+
+        if response.status_code != 200:
+            logger.warning(
+                "Internet policies endpoint returned status %s for org %s. Continuing without this data.",
+                response.status_code,
+                _sanitize_log_text(org_id),
+            )
+            return None
+
+        payload = response.json()
+        policies.extend(_as_list(payload))
+
+        next_url = None
+        params = None
+        link_header = response.headers.get("Link", "")
+        if link_header:
+            for link in requests.utils.parse_header_links(link_header):
+                if link.get("rel") == "next" and link.get("url"):
+                    next_url = str(link["url"])
+                    break
+
+    return policies
 
 
 def _adaptive_enabled_networks(adaptive_policy_settings: Any) -> set[str]:
@@ -565,7 +611,9 @@ def _write_csv(
             device_serial = row["device_serial"]
             network_name = network_name_lookup.get(network_id, "")
             vpn_enabled = device_serial in vpn_serials
-            internet_policies_configured = policy_lookup.get(network_id, False)
+            policy_data_unavailable = policy_lookup.get(POLICY_DATA_UNAVAILABLE, False)
+            internet_policies_configured = bool(policy_lookup.get(network_id, False)) if not policy_data_unavailable else False
+            internet_policies_output: str | bool = "NA" if policy_data_unavailable else internet_policies_configured
             vpn_uplink_selection_configured = vpn_uplink_selection_lookup.get(network_id, False)
             adaptive_enabled = network_id in adaptive_enabled_networks
             number_wan_link = wan_link_count_lookup.get(network_id, 0)
@@ -601,7 +649,7 @@ def _write_csv(
                     number_wan_link,
                     number_wan_link_enabled,
                     vpn_enabled,
-                    internet_policies_configured,
+                    internet_policies_output,
                     vpn_uplink_selection_configured,
                     vpn_exclusion_configured,
                     adaptive_enabled,
@@ -615,6 +663,7 @@ def _write_csv(
 def _fetch_all_data(
     dashboard: meraki.DashboardAPI,
     org_id: str,
+    api_key: str,
 ) -> dict[str, Any]:
     """Fetch all required data from the Meraki API for an organization.
 
@@ -678,9 +727,13 @@ def _fetch_all_data(
     print(f"✓ {len(vpn_statuses)} VPN status entries retrieved")
 
     print("Fetching internet policies...")
-    internet_policies = _get_organization_appliance_sdwan_internet_policies(dashboard, org_id)
-    logger.debug("Retrieved %d internet policy entries", len(internet_policies))
-    print(f"✓ {len(internet_policies)} internet policy entries retrieved")
+    internet_policies = _get_organization_appliance_sdwan_internet_policies(dashboard, org_id, api_key)
+    if internet_policies is None:
+        logger.warning("Internet policy data unavailable; continuing with NA placeholders")
+        print("✓ Internet policy data unavailable; will output NA")
+    else:
+        logger.debug("Retrieved %d internet policy entries", len(internet_policies))
+        print(f"✓ {len(internet_policies)} internet policy entries retrieved")
 
     print("Fetching appliance uplink statuses...")
     appliance_uplink_statuses = dashboard.appliance.getOrganizationApplianceUplinkStatuses(
@@ -845,7 +898,7 @@ def main() -> None:
         _validate_api_key_and_org(dashboard, args.org_id)
         print(f"✓ API key validated, organization {args.org_id} is accessible")
 
-        data = _fetch_all_data(dashboard, args.org_id)
+        data = _fetch_all_data(dashboard, args.org_id, api_key)
 
         logger.info("All API calls completed successfully")
         print("Building lookup tables...")

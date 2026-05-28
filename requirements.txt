@@ -1,3 +1,4 @@
 keyring>=25.0
 meraki>=3.1
 keyring>=25.0
+requests>=2.32.0
