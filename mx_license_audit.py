@@ -79,6 +79,14 @@ def _string_or_empty(value: Any) -> str:
     return "" if text.lower() == "none" else text
 
 
+def _emit_stdout(message: str = "", *, level: int = logging.INFO) -> None:
+    """Write a user-visible message to stdout and mirror it to logs when available."""
+    print(message)
+    logger = logging.getLogger(__name__)
+    if logger.hasHandlers():
+        logger.log(level, _sanitize_log_text(message))
+
+
 def _get_api_key_from_environment_or_keyring() -> str:
     """Retrieve Meraki API key from environment or system keyring.
 
@@ -537,11 +545,11 @@ def _print_summary(counts: dict[str, int]) -> None:
     Args:
         counts: Counts of each FeatureLevel and total devices.
     """
-    print()
-    print(f"Total MX devices audited: {counts['Total']}")
-    print(f"Advantage level = {counts['Advantage']}")
-    print(f"Essential level = {counts['Essential']}")
-    print(f"Unknown level = {counts['Unknown']}")
+    _emit_stdout()
+    _emit_stdout(f"Total MX devices audited: {counts['Total']}")
+    _emit_stdout(f"Advantage level = {counts['Advantage']}")
+    _emit_stdout(f"Essential level = {counts['Essential']}")
+    _emit_stdout(f"Unknown level = {counts['Unknown']}")
 
 
 def _write_csv(
@@ -675,7 +683,7 @@ def _fetch_all_data(
         dict[str, Any]: Mapping of data keys to their fetched payloads.
     """
     logger = logging.getLogger(__name__)
-    print("Fetching inventory devices...")
+    _emit_stdout("Fetching inventory devices...")
     logger.info("Fetching inventory devices")
     inventory_devices = dashboard.organizations.getOrganizationInventoryDevices(
         org_id,
@@ -684,27 +692,27 @@ def _fetch_all_data(
     )
     inventory_rows = _inventory_rows(inventory_devices)
     appliance_count = len(inventory_rows)
-    print(f"✓ Found {appliance_count} appliance devices")
+    _emit_stdout(f"✓ Found {appliance_count} appliance devices")
     logger.info("Found %d appliance devices", appliance_count)
 
-    print("Fetching networks...")
+    _emit_stdout("Fetching networks...")
     networks = dashboard.organizations.getOrganizationNetworks(
         org_id,
         total_pages=-1,
         perPage=PER_PAGE,
     )
     logger.debug("Retrieved %d networks", len(networks))
-    print(f"✓ {len(networks)} networks retrieved")
+    _emit_stdout(f"✓ {len(networks)} networks retrieved")
 
     inventory_rows, excluded_inventory_rows = _filter_rows_with_known_networks(inventory_rows, networks)
     if excluded_inventory_rows:
-        print(f"✓ Excluding {excluded_inventory_rows} appliance devices not assigned to a network")
+        _emit_stdout(f"✓ Excluding {excluded_inventory_rows} appliance devices not assigned to a network")
         logger.info(
             "Excluded %d appliance devices not assigned to a known network",
             excluded_inventory_rows,
         )
     if not inventory_rows:
-        print("✓ No appliance devices assigned to a network, skipping appliance configuration fetches")
+        _emit_stdout("✓ No appliance devices assigned to a network, skipping appliance configuration fetches")
         logger.info("No appliance devices assigned to a known network; skipping appliance configuration fetches")
         return {
             "inventory_rows": [],
@@ -717,51 +725,51 @@ def _fetch_all_data(
             "vpn_uplink_selection_lookup": {},
         }
 
-    print("Fetching VPN statuses...")
+    _emit_stdout("Fetching VPN statuses...")
     vpn_statuses = dashboard.appliance.getOrganizationApplianceVpnStatuses(
         org_id,
         total_pages=-1,
         perPage=PER_PAGE,
     )
     logger.debug("Retrieved %d VPN status entries", len(vpn_statuses))
-    print(f"✓ {len(vpn_statuses)} VPN status entries retrieved")
+    _emit_stdout(f"✓ {len(vpn_statuses)} VPN status entries retrieved")
 
-    print("Fetching internet policies...")
+    _emit_stdout("Fetching internet policies...")
     internet_policies = _get_organization_appliance_sdwan_internet_policies(dashboard, org_id, api_key)
     if internet_policies is None:
         logger.warning("Internet policy data unavailable; continuing with NA placeholders")
-        print("✓ Internet policy data unavailable; will output NA")
+        _emit_stdout("✓ Internet policy data unavailable; will output NA", level=logging.WARNING)
     else:
         logger.debug("Retrieved %d internet policy entries", len(internet_policies))
-        print(f"✓ {len(internet_policies)} internet policy entries retrieved")
+        _emit_stdout(f"✓ {len(internet_policies)} internet policy entries retrieved")
 
-    print("Fetching appliance uplink statuses...")
+    _emit_stdout("Fetching appliance uplink statuses...")
     appliance_uplink_statuses = dashboard.appliance.getOrganizationApplianceUplinkStatuses(
         org_id,
         total_pages=-1,
         perPage=PER_PAGE,
     )
     logger.debug("Retrieved %d appliance uplink status entries", len(appliance_uplink_statuses))
-    print(f"✓ {len(appliance_uplink_statuses)} appliance uplink status entries retrieved")
+    _emit_stdout(f"✓ {len(appliance_uplink_statuses)} appliance uplink status entries retrieved")
 
-    print("Fetching VPN exclusions...")
+    _emit_stdout("Fetching VPN exclusions...")
     vpn_exclusions_by_network = dashboard.appliance.getOrganizationApplianceTrafficShapingVpnExclusionsByNetwork(
         org_id,
         total_pages=-1,
         perPage=PER_PAGE,
     )
     logger.debug("Retrieved %d VPN exclusion entries", len(vpn_exclusions_by_network))
-    print(f"✓ {len(vpn_exclusions_by_network)} VPN exclusion entries retrieved")
+    _emit_stdout(f"✓ {len(vpn_exclusions_by_network)} VPN exclusion entries retrieved")
 
-    print("Fetching Adaptive Policy settings...")
+    _emit_stdout("Fetching Adaptive Policy settings...")
     adaptive_policy_settings = dashboard.organizations.getOrganizationAdaptivePolicySettings(org_id)
     adaptive_enabled_networks = _adaptive_enabled_networks(adaptive_policy_settings)
     logger.debug("Retrieved %d adaptive-enabled networks", len(adaptive_enabled_networks))
-    print(f"✓ {len(adaptive_enabled_networks)} adaptive-enabled networks retrieved")
+    _emit_stdout(f"✓ {len(adaptive_enabled_networks)} adaptive-enabled networks retrieved")
 
-    print("Fetching per-network uplink selection policies...")
+    _emit_stdout("Fetching per-network uplink selection policies...")
     vpn_uplink_selection_lookup = _build_vpn_uplink_selection_lookup(dashboard, inventory_rows)
-    print("✓ Per-network uplink selections retrieved")
+    _emit_stdout("✓ Per-network uplink selections retrieved")
     logger.debug("Per-network uplink selection lookup built successfully")
 
     return {
@@ -852,24 +860,24 @@ def _validate_api_key_and_org(dashboard: meraki.DashboardAPI, org_id: str) -> No
 
         org_lookup = {org.get("id"): org.get("name", "N/A") for org in orgs if isinstance(org, dict) and org.get("id")}
         if org_id not in org_lookup:
-            print(f"[ERROR] Organization ID '{org_id}' is not available with this API key.")
-            print("\nAvailable organizations:")
-            print(f"{'Organization ID':<20} {'Organization Name'}")
-            print("-" * 60)
+            _emit_stdout(f"[ERROR] Organization ID '{org_id}' is not available with this API key.", level=logging.ERROR)
+            _emit_stdout("\nAvailable organizations:", level=logging.ERROR)
+            _emit_stdout(f"{'Organization ID':<20} {'Organization Name'}", level=logging.ERROR)
+            _emit_stdout("-" * 60, level=logging.ERROR)
             for oid in sorted(org_lookup.keys()):
-                print(f"{oid:<20} {org_lookup[oid]}")
+                _emit_stdout(f"{oid:<20} {org_lookup[oid]}", level=logging.ERROR)
             raise SystemExit(1)
 
     except meraki.APIKeyError as exc:
-        print("[ERROR] API key is invalid. Please check your MERAKI_DASHBOARD_API_KEY.")
+        _emit_stdout("[ERROR] API key is invalid. Please check your MERAKI_DASHBOARD_API_KEY.", level=logging.ERROR)
         raise SystemExit(1) from exc
     except meraki.APIError as exc:
         status = getattr(exc, "status", "unknown")
         message = _sanitize_log_text(exc)
-        print(f"[ERROR] Meraki API error status={status}. {message}")
+        _emit_stdout(f"[ERROR] Meraki API error status={status}. {message}", level=logging.ERROR)
         raise SystemExit(1) from exc
     except Exception as exc:
-        print(f"[ERROR] HTTP request failed: {_sanitize_log_text(exc)}")
+        _emit_stdout(f"[ERROR] HTTP request failed: {_sanitize_log_text(exc)}", level=logging.ERROR)
         raise SystemExit(1) from exc
 
 
@@ -896,12 +904,12 @@ def main() -> None:
         )
         logger.info("Validating API key and organization ID")
         _validate_api_key_and_org(dashboard, args.org_id)
-        print(f"✓ API key validated, organization {args.org_id} is accessible")
+        _emit_stdout(f"✓ API key validated, organization {args.org_id} is accessible")
 
         data = _fetch_all_data(dashboard, args.org_id, api_key)
 
         logger.info("All API calls completed successfully")
-        print("Building lookup tables...")
+        _emit_stdout("Building lookup tables...")
         logger.debug("Parsing API responses and building lookup tables")
         rows = data["inventory_rows"]
         vpn_status_serials = _vpn_serials(data["vpn_statuses"])
@@ -910,10 +918,10 @@ def main() -> None:
         wan_link_count_lookup = _build_wan_link_count_lookup(data["appliance_uplink_statuses"])
         wan_link_enabled_count_lookup = _build_wan_link_enabled_count_lookup(data["appliance_uplink_statuses"])
         vpn_exclusion_lookup = _build_vpn_exclusion_lookup(data["vpn_exclusions_by_network"])
-        print("✓ Lookup tables built")
+        _emit_stdout("✓ Lookup tables built")
         logger.info("Lookup tables built successfully")
 
-        print(f"Writing results to {args.file}...")
+        _emit_stdout(f"Writing results to {args.file}...")
         logger.info("Writing results to CSV file: %s", args.file)
         counts = _write_csv(
             args.org_id,
@@ -931,27 +939,27 @@ def main() -> None:
         _print_summary(counts)
         logger.info("Audit summary: Total=%d, Advantage=%d, Essential=%d, Unknown=%d",
                     counts['Total'], counts['Advantage'], counts['Essential'], counts['Unknown'])
-        print(f"✓ Audit complete. Results saved to {args.file}")
+        _emit_stdout(f"✓ Audit complete. Results saved to {args.file}")
         logger.info("Audit completed successfully. Results saved to %s", args.file)
     except meraki.APIKeyError as exc:
         error_msg = f"Invalid Meraki API key. {_sanitize_log_text(exc)}"
-        print(f"[ERROR] {error_msg}")
+        _emit_stdout(f"[ERROR] {error_msg}", level=logging.ERROR)
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
     except meraki.APIError as exc:
         status = getattr(exc, "status", "unknown")
         error_msg = f"Meraki API error status={status}. {_sanitize_log_text(exc)}"
-        print(f"[ERROR] {error_msg}")
+        _emit_stdout(f"[ERROR] {error_msg}", level=logging.ERROR)
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
     except Exception as exc:
         error_msg = f"HTTP request failed: {_sanitize_log_text(exc)}"
-        print(f"[ERROR] {error_msg}")
+        _emit_stdout(f"[ERROR] {error_msg}", level=logging.ERROR)
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
     except (ValueError) as exc:
         error_msg = _sanitize_log_text(exc)
-        print(f"[ERROR] {error_msg}")
+        _emit_stdout(f"[ERROR] {error_msg}", level=logging.ERROR)
         logger.error(error_msg, exc_info=True)
         raise SystemExit(1) from exc
 
